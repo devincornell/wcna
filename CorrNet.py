@@ -18,7 +18,7 @@ class CorrNet(nx.Graph):
     This class is for the creation and manipulation of a correlation network to analyze
     correlated attributes individually.
     '''
-    def __init__(self, df=None, pickle_file=None, name=None, *args):
+    def __init__(self, df=None, pickle_file=None, name=None, beta=2, *args):
         '''Converts raw data into a Correlation Network'''
         nx.Graph.__init__(self, *args)
 
@@ -39,7 +39,7 @@ class CorrNet(nx.Graph):
 
                         r, p = stats.spearmanr(df[u], df[v], nan_policy='omit')
                         r, p = float(r), float(p)
-                        self.add_edge(u,v, r=r, p=p, ir=1/(r**2),ar=abs(r))
+                        self.add_edge(u,v, r=r, p=p, ir=1/(r**beta),ar=abs(r))
         
         elif pickle_file is not None:
             # load from pickle file
