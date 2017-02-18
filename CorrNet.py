@@ -17,43 +17,39 @@ class CorrNet(nx.Graph):
     '''
     This class is for the creation and manipulation of a correlation network to analyze
     correlated attributes individually.
-
     '''
-    def __init__(self,df=None,pickle_file=None,name=None, *args):
+    def __init__(self, df=None, pickle_file=None, name=None, *args):
         '''Converts raw data into a Correlation Network'''
         nx.Graph.__init__(self, *args)
 
-        if pickleFile is not None:
+        if df is not None:
+            # load from dataframe
+
+            for col in df.columns:
+                u = np.unique(df[col])
+                if len(u) > 9:
+                    vartype = 'scalar'
+                else:
+                    vartype = 'ordinal'
+                self.add_node(col,dtype=str(df[col].dtype),vartype=vartype)
+
+            for u in self.node:
+                for v in self.node:
+                    if u is not v:
+
+                        r, p = stats.spearmanr(df[u], df[v], nan_policy='omit')
+                        r, p = float(r), float(p)
+                        self.add_edge(u,v, r=r, p=p, ir=1/(r**2),ar=abs(r))
+        
+        elif pickle_file is not None:
             # load from pickle file
-            
-            self.loadFromPickle(pickleFile)
+
             with open(filename, 'rb') as f:
                 data = pickle.load(f)
             self.__dict__.update(data)
 
-        elif df is not None:
-            # load from dataframe
-            
-            for col in df.columns:
-                self.add_node(col,dtype=df.dtype[col])
-
-            for u in self.nodes():
-                for v in self.nodes():
-                    if u is not v:
-                        r,p = stats.spearmanr(df[u], df[v], nan_policy='omit')
-
-                        self.add_edge(u,v, r=r, p=p, ir=1/(r**2),ar=abs(r))
-        
         if name is not None:
             self.graph['name'] = name
-
-    @property
-    def name(self):
-        return self.graph['name']
-
-    @name.setter
-    def name(self,newname):
-        self.graph['name'] = newname
 
     ##### Get Node or Edge Summary Statistics #####
     '''
@@ -211,36 +207,6 @@ class CorrNet(nx.Graph):
         for e,inTree in edgeInTree.items():
             if not inTree:
                 G.remove_edge(*e)
-
-        return G
-
-    def getCorrelationGraph(self):
-        return self.G.copy()
-
-    def getDiffGraph(self, diffAttr, otherNet):
-        '''This function will get a graph representing differences between the CorrNets of
-            two different differentials of a varable's distribution. It assumes that both
-            graphs have the same variables and same sets of edges.'''
-        
-        # new graph describing differential
-        G = nx.Graph()
-        G.add_nodes_from(self.G.nodes())
-
-        # get edges from self and set them in new graph
-        edges = nx.get_edge_attributes(self.G,diffAttr)
-        nx.set_edge_attributes(G, self.name+'_'+diffAttr, edges)
-        
-        # get edges from self and set them in new graph
-        otherEdges = nx.get_edge_attributes(otherNet.G,diffAttr)
-        nx.set_edge_attributes(G,otherNet.name+'_'+diffAttr,otherEdges)
-
-        eDiff = {} # populate this with edge differentials
-        for e in edges:
-            eDiff[e] = math.fabs(edges[e] - otherEdges[e])
-
-        # apply eDiff as weight attribute and as a 'diff' attribute
-        nx.set_edge_attributes(G,'diff_'+self.name+'_'+otherNet.name,eDiff)
-        nx.set_edge_attributes(G,'weight',eDiff)
 
         return G
 
