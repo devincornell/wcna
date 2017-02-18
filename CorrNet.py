@@ -36,7 +36,6 @@ class CorrNet(nx.Graph):
             for u in self.node:
                 for v in self.node:
                     if u is not v:
-
                         r, p = stats.spearmanr(df[u], df[v], nan_policy='omit')
                         r, p = float(r), float(p)
                         self.add_edge(u,v, r=r, p=p, ir=1/(r**beta),ar=abs(r))
@@ -56,32 +55,6 @@ class CorrNet(nx.Graph):
         These are graph functions that allow the user to see summary statistics about
         weights that were created.
     '''
-
-    def plotEdgeWeightHist(self, attrName,relBins=10,outlierCutoff=None):
-        edges = np.array(list(nx.get_edge_attributes(self.G,attrName).values()))
-        
-        if outlierCutoff is not None:
-            u = np.median(edges)
-            std = np.sqrt(np.mean(np.absolute(edges-u)))*outlierCutoff
-            edges = edges[np.logical_and(edges > u-std, edges < u+std)]
-
-        #hist,binedges = np.histogram(edges,bins=len(edges)*relBins)
-        nbins = math.floor(relBins*math.log10(np.size(edges)))
-        plt.hist(edges,nbins)
-        plt.show()
-
-    def plotNodeWeightHist(self, attrName,relBins=1.0):
-        edges = nx.get_node_attributes(bn.G,attrName)
-
-        weightList = []
-        for eKey in edges.keys():
-            weightList.append(edges[eKey])
-
-        weightList = np.array(weightList)
-        hist,binedges = np.histogram(weightList,bins=len(edges)*relBins)
-
-        plt.plot(binedges[0:-1],hist)
-        plt.show()
 
     def getRankedNodes(self,attrName,descending=False):
         attr = nx.get_node_attributes(self.G,attrName)
@@ -280,5 +253,29 @@ class CorrNet(nx.Graph):
         return
 
 
+def edge_hist(CN, attr, bins=10, cutoff=None):
+    edges = np.array(list(nx.get_edge_attributes(CN,attr).values()))
+    
+    if cutoff is not None:
+        u = np.median(edges)
+        std = np.sqrt(np.mean(np.absolute(edges-u)))*cutoff
+        edges = edges[np.logical_and(edges > u-std, edges < u+std)]
 
+    #hist,binedges = np.histogram(edges,bins=len(edges)*bins)
+    nbins = math.floor(bins*math.log10(np.size(edges)))
+    plt.hist(edges,nbins)
+    plt.show()
+
+def node_hist(CN, attr, bins=10):
+    edges = nx.get_node_attributes(CN,attr)
+
+    weightList = []
+    for eKey in edges.keys():
+        weightList.append(edges[eKey])
+
+    weightList = np.array(weightList)
+    hist,binedges = np.histogram(weightList,bins=len(edges)*bins)
+
+    plt.plot(binedges[0:-1],hist)
+    plt.show()
 
