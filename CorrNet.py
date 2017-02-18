@@ -3,14 +3,15 @@ import networkx as nx
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
+import scipy.stats as stats
+
 import math
 import time
 import pickle
 import itertools
 #from numba import jit
 
-import mcl # markov chain library
+#import mcl # markov chain library
 
 class CorrNet(nx.Graph):
     '''
@@ -18,111 +19,41 @@ class CorrNet(nx.Graph):
     correlated attributes individually.
 
     '''
-    def __init__(self,data=None,descriptions=None,corrAttrName=None,pickleFile=None,netName=None):
+    def __init__(self,df=None,pickle_file=None,name=None, *args):
         '''Converts raw data into a Correlation Network'''
-        nx.Graph.__init__(self)
-        
-        if data is not None and descriptions is not None and corrAttrName is not None:
-            self.constructCorrWeightGraph(data,descriptions,corrAttrName)        
-        
-        elif pickleFile is not None:
+        nx.Graph.__init__(self, *args)
+
+        if pickleFile is not None:
+            # load from pickle file
+            
             self.loadFromPickle(pickleFile)
+            with open(filename, 'rb') as f:
+                data = pickle.load(f)
+            self.__dict__.update(data)
 
-        if netName is not None:
-            self.name = netName
-        else:
-            self.name = ''
+        elif df is not None:
+            # load from dataframe
+            
+            for col in df.columns:
+                self.add_node(col,dtype=df.dtype[col])
 
+            for u in self.nodes():
+                for v in self.nodes():
+                    if u is not v:
+                        r,p = stats.spearmanr(df[u], df[v], nan_policy='omit')
 
-    def constructCorrWeightGraph(self, data, desc, corAttrName):
-        '''Takes data and description tables (both Pandas df) and converts them into a graph where weights are correlations.'''
+                        self.add_edge(u,v, r=r, p=p, ir=1/(r**2),ar=abs(r))
         
-        # validvar list is intersection of data and desc
-        datavars = data.columns.values.tolist() # list of variables
-        descvars = desc.index.values.tolist()
-        validVars = list(set(datavars) & set(descvars))
-        
-        # separate into correlation vars and nominal vars
-        corrVars = []
-        nomVars = []
-        for v in validVars:
-            if desc.loc[v,'type'] == 'nom':
-                nomVars.append(v)
-            else:
-                corrVars.append(v)
+        if name is not None:
+            self.graph['name'] = name
 
-        # extract needed portions of data and descriptions
-        data = data.loc[:,corrVars + nomVars]
-        desc = desc.loc[corrVars + nomVars,:]
+    @property
+    def name(self):
+        return self.graph['name']
 
-
-        # get correlation matrix and construct graph
-        corrMat = self.getCorrWeightMat(data.loc[:,corrVars],desc,corrVars)
-        
-        # create graph using node names and correlation matrix
-        G = graphFromMat(corrMat, corrVars, corAttrName)
-
-        # apply attributes from desc about variables
-        descAttr = desc.loc[corrVars,:].to_dict().items()
-        for key, val in descAttr:
-            nx.set_node_attributes(G,key,val)
-
-        # assign as member vars to CorrNet
-        self.G = G.copy()
-        self.corrVars = corrVars
-        self.nomVars = nomVars
-        self.data = data
-        self.desc = desc
-
-        return
-
-    def getCorrWeightMat(self, data, desc, corrVars):
-
-        # perform fast correlations on all variables
-        corrMat = data.loc[:,corrVars].corr(method='pearson') # for scalars (write over this one)
-        spearmanCorr = data.loc[:,corrVars].corr(method='spearman') # for ordinals
-
-        # apply spearman correlation where needed
-        for v in corrVars:
-            if desc.loc[v,'type'] == 'ord':
-                # set row & col as spearman correlation
-                corrMat.loc[v,:] = spearmanCorr.loc[v,:]
-                corrMat.loc[:,v] = spearmanCorr.loc[:,v]
-
-        return np.array(corrMat)
-
-
-    ##### Get Properties of Graph #####
-    '''
-        These functions allow basic access and adjustment of graph
-        properties.
-    '''
-    def getEdgeProperties(self):
-        edgeDat = self.G.get_edge_data(self.var[0],self.var[1])
-        return edgeDat.keys()
-
-    def getNodeProperties(self):
-        return None
-
-    def getVarNames(self):
-        return self.var
-
-
-    def setWeightAttr(self,attrName,G=None):
-        '''Set attrName values as the special weight attribute.
-            If a graph is provided as input, it will output a 
-            new graph with the weight attribute set.'''
-        if G is not None:
-            attrG = G.copy()
-            weightAttr = nx.get_edge_attributes(attrG,attrName)
-            nx.set_edge_attributes(attrG,'weight',float(weightAttr))
-            return attrG
-        else:
-            weightAttr = nx.get_edge_attributes(self.G,attrName)
-            nx.set_edge_attributes(self.G,'weight',float(weightAttr))
-            return
-
-        # set attribute as 'weight'
+    @name.setter
+    def name(self,newname):
+        self.graph['name'] = newname
 
     ##### Get Node or Edge Summary Statistics #####
     '''
@@ -186,11 +117,7 @@ class CorrNet(nx.Graph):
 
         return
 
-    def applyCentralityAttr(self, attrName, baseAttr):
-        # add attributes for centrality to each node
-        bc = nx.betweenness_centrality(self.G,weight=baseAttr)
-        nx.set_node_attributes(self.G,attrName,bc)
-        return
+
     
     def applyMCLClusterAttr(self, attrName, baseAttr, numClusters):
 
@@ -207,12 +134,6 @@ class CorrNet(nx.Graph):
                 clusters[n] = 0
             nx.set_node_attributes(self.G,attrName,clusters)
 
-        return
-
-    ##### Graph Clustering Algorithms #####
-
-    def analyzeMCLClusters(self,weightAttr,rRange=np.arange(2,30),filename=None):
-        mcl.analyze_mcl(self.G,rRange=rRange,showPlot=True,weightAttr=weightAttr,filename=filename)
         return
 
     ##### Create Derived Graphs From Original CorrNet ##### 
@@ -383,95 +304,15 @@ class CorrNet(nx.Graph):
         G.graph['name'] = name # assign this for later use
 
         return G
-
-    ##### Saving File Functions #####
-    '''
-        These are functions for saving the graphs as files.
-    '''
-
-    def saveGEXFFile(self, filename, graph = None):
-        if graph == None:
-            nx.write_gexf(self.G, filename)
-        else:
-            nx.write_gexf(graph,filename)
-        print('Saved gexf file %s.' % filename)
-
-    def saveVariableHistogramPdf(self, pdfFilename):
-        # save distributions in pdf format
-        pp = PdfPages(pdfFilename)
-        descMap = nx.get_node_attributes(self.G,'description')
-        for v in self.data.columns.values.tolist():
-            print(v, len(np.unique(self.data[v])))
-            plt.hist(self.data.loc[np.logical_not(np.isnan(self.data[v])),v])
-            plt.title(str(v))
-            plt.savefig(pp,format='pdf')
-            plt.cla()
-        pp.close()
     
-    def saveAsPickle(self, filename):
+    def save_pickle(self, filename):
         with open(filename, 'wb') as f:
                 # Pickle the 'data' dictionary using the highest protocol available.
                 pickle.dump(self.__dict__, f, pickle.HIGHEST_PROTOCOL)
         print('Saved CorrNet as pickle file.')
 
-
-    def loadFromPickle(self, filename):
-        # restores itself from pickle file
-        with open(filename, 'rb') as f:
-            # The protocol version used is detected automatically, so we do not
-            # have to specify it.
-            data = pickle.load(f)
-        
-        self.__dict__.update(data) 
-
         return
 
 
-def graphFromMat(mat, nodes, attrName, nanVal=0.005):
-    G = nx.Graph()
 
-    for n in nodes:
-        G.add_node(n)
-
-    for row in range(1,len(nodes)):
-        for col in range(row-1):
-            edgeVal = mat[row,col]
-            if np.isnan(edgeVal):
-                edgeVal = nanVal
-            if edgeVal == 0.0:
-                edgeVal = nanVal
-            G.add_edge(nodes[row],nodes[col],{attrName:float(edgeVal)})
-    
-    return G
-
-
-def dataTableFromGraphPartitions(GList, attrName):
-    '''Will extract node information from graph and convert it to a dataframe where nodes are indices.'''
-
-    n = 10
-
-    # get top nodes and column names
-    colNames = []
-    topNodes = set()
-    nodeData = {}
-    for G in GList:
-        colNames.append(G.graph['name'])
-        
-        # get top n variables from this graph
-        nodeData[G.graph['name']] = pd.Series(nx.get_node_attributes(G,attrName))
-        nodeData[G.graph['name']].sort_values(axis=0,ascending=True, na_position='last',inplace=True)
-        ind = nodeData[G.graph['name']].index.values.tolist()
-        topNodes = topNodes.union(ind[0:(n-1)])
-    
-    # create dataframe
-    topNodes = list(topNodes)
-    df = pd.DataFrame(nodeData,index=nodeData[colNames[0]].index).loc[topNodes,:]
-
-    # add variance column
-    df['std'] = pd.Series(np.std(df,axis=1),index=df.index)
-
-    # sort by variance column
-    df.sort_values('std',axis=0,inplace=True,ascending=False)
-
-    return df
 
