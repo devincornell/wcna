@@ -15,13 +15,14 @@ class CorrNet(nx.Graph):
     This class is for the creation and manipulation of a correlation network to analyze
     correlated attributes individually.
     '''
-    def __init__(self, df=None, info_df=None, pickle_file=None, beta=2, *args):
+    def __init__(self, df=None, info_df=None, pickle_file=None, beta=2, **kwargs):
         '''Converts raw data in df into correlation network. If present, info_df should
         be indexed by the df column name and include any relevant informtion pertaining
         to each variable. If pickle_file is present, it will read in a file that describes
         itself.
         '''
-        nx.Graph.__init__(self, *args)
+        nx.Graph.__init__(self, **kwargs)
+        self.beta = beta
 
         if df is not None:
             # load from dataframe
@@ -39,25 +40,31 @@ class CorrNet(nx.Graph):
                     if u is not v:
                         r, p = stats.spearmanr(df[u], df[v], nan_policy='omit')
                         r, p = float(r), float(p)
-                        self.add_edge(u,v, r=r, p=p, ir=1/(r**beta),ar=abs(r))
+                        if abs(r) > 1e-4:
+                            ir = 1/(r**beta)
+                        else:
+                            ir = 10**16
+                        self.add_edge(u,v, r=r, p=p, ir=ir,ar=abs(r))
 
-            _edge_prop = ('r','p','ir','ar')
+            edge_properties = {\
+                'spearman_r':'r',\
+                'p-value':'p',\
+                'inverse_correlation,beta={}'.format(beta):'ir',\
+                'absolute_value_r':'abr'\
+            }
 
             if info_df is not None:
                 for n in self.node:
                     if n in info_df.index:
                         for col in info_df.columns:
-                            n[col] = info_df.loc[n,col]
+                            self.node[n][col] = info_df.loc[n,col]
         
         elif pickle_file is not None:
             # load from pickle file
 
-            with open(filename, 'rb') as f:
+            with open(pickle_file, 'rb') as f:
                 data = pickle.load(f)
             self.__dict__.update(data)
-
-        if name is not None:
-            self.graph['name'] = name
 
     @property
     def edge_properties(self):
@@ -101,13 +108,14 @@ def from_nominal_analysis(df, idf, nominal_var, verbose=False):
     a separate correlation network out of each one.
     '''
 
-    values = list(np.unique(np.array(self.data[nominal_var])))
+    values = list(np.unique(np.array(df[nominal_var])))
 
     CNs = []
     i = 0
     for v in values:
+        gname = '%s_%s_cent' % (str(nominal_var),str(v))
+
         if verbose:
-            gname = '%s_%s_%s_cent' % (str(diffVar),str(v),str(centerNode))
             print('Computing partition %d resulting in graph %s.' % (i,gname))
 
         pdf = df.loc[df[nominal_var] == v]
@@ -125,27 +133,26 @@ def central_span_tree(CN, center_node, path_weight):
 
     CN = CN.copy()
 
-    # calculate shortest path between varName and every other nodeName
-    shortestPaths = nx.shortest_path(CN,nodeName,weight=attrName)
-    shortestPathsDist = nx.shortest_path_length(CN,nodeName,weight=attrName)
-    del shortestPaths[center_node]
-    del shortestPathsDist[center_node]
+    # calculate shortest path between varName and every other center_node
+    shortestPaths = nx.shortest_path(CN,center_node,weight=path_weight)
+    shortestPathsDist = nx.shortest_path_length(CN,center_node,weight=path_weight)
+    #del shortestPaths[center_node]
+    #del shortestPathsDist[center_node]
 
-    edges = CN.edges()
-    edgeInTree = {e:False for e in edges}
+    edgeInTree = {e:False for e in CN.edges()}
     distFromCenter = {}
     for n,path in shortestPaths.items():
         distFromCenter[n] = len(path)
         edgeList = [(path[i],path[i+1]) for i in range(len(path)-1)]
         for e in edgeList:
-            if e in edges:
+            if e in CN.edges():
                 edgeInTree[e] = True
             else:
                 edgeInTree[(e[1],e[0])] = True
     
     # apply node attribute indicating shortest path distance from central node
-    nx.set_node_attributes(CN,'nodes_from_'+str(nodeName),distFromCenter)
-    nx.set_node_attributes(CN,'dist_from_'+str(nodeName),shortestPathsDist)
+    nx.set_node_attributes(CN,'nodes_from_'+str(center_node),distFromCenter)
+    nx.set_node_attributes(CN,'dist_from_'+str(center_node),shortestPathsDist)
 
     # create new graph where edges not in tree will be removed
     for e,inTree in edgeInTree.items():
