@@ -15,7 +15,7 @@ class CorrNet(nx.Graph):
     This class is for the creation and manipulation of a correlation network to analyze
     correlated attributes individually.
     '''
-    def __init__(self, df=None, info_df=None, pickle_file=None, name=None, beta=2, *args):
+    def __init__(self, df=None, info_df=None, pickle_file=None, beta=2, *args):
         '''Converts raw data in df into correlation network. If present, info_df should
         be indexed by the df column name and include any relevant informtion pertaining
         to each variable. If pickle_file is present, it will read in a file that describes
@@ -96,30 +96,27 @@ def from_quantile_analysis(df, diffVar, weightFunc, centerNode, numPartitions):
 
     return GList
 
-def from_nominal_analysis(df, diffVar, weightFunc, centerNode):
-    '''Splits data into partitions based on nominal variable value.'''
-    if not self.desc.loc[diffVar,'type'] == 'nom': # check if diffVar is a scalar value
-        raise NameError(diffVar)
+def from_nominal_analysis(df, idf, nominal_var, verbose=False):
+    '''Splits data into partitions based on nominal variable value and builds
+    a separate correlation network out of each one.
+    '''
 
-    partVals = list(np.unique(np.array(self.data[diffVar])))
-    numPart = len(partVals)
-    numNodes = len(self.corrVars)
+    values = list(np.unique(np.array(self.data[nominal_var])))
 
-    #corrMat = np.zeros((numNodes,numNodes,numPart))
-    GList = []
+    CNs = []
     i = 0
-    for v in partVals:
-        partData = self.data.loc[self.data[diffVar] == v]
-        
-        gname = '%s_%s_%s_cent' % (str(diffVar),str(v),str(centerNode))
-        print('Computing partition %d resulting in graph %s.' % (i,gname))
+    for v in values:
+        if verbose:
+            gname = '%s_%s_%s_cent' % (str(diffVar),str(v),str(centerNode))
+            print('Computing partition %d resulting in graph %s.' % (i,gname))
 
-        G = self.getCorrelationSpanningGraph(partData,self.desc,weightFunc,centerNode,name=gname)
-        GList.append(G)
+        pdf = df.loc[df[nominal_var] == v]
+        CN = CorrNet(pdf,idf,name=gname)
+        CNs.append(CN)
 
         i = i + 1
 
-    return GList
+    return CNs
 
 
 def central_span_tree(CN, center_node, path_weight):
