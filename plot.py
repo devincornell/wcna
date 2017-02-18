@@ -1,4 +1,8 @@
 import networkx as nx
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import math
 
 def edge_hist(CN, attr, bins=10, cutoff=None):
     edges = np.array(list(nx.get_edge_attributes(CN,attr).values()))

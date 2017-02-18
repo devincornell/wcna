@@ -1,7 +1,8 @@
 
 import networkx as nx
 if __name__ == "__main__":
-    import CorrNet
+    import corrnet
+    import plot
     import pandas as pd
     import numpy as np
 
@@ -16,14 +17,14 @@ if __name__ == "__main__":
     df = pd.DataFrame(d)
 
     # build correlation network
-    cn = CorrNet.CorrNet(df)
+    cn = corrnet.CorrNet(df)
 
     # add properties
     ec = nx.betweenness_centrality(cn, weight='ar')
     nx.set_node_attributes(cn,'centrality', ec)
 
     # show properties
-    CorrNet.edge_hist(cn,'r')
+    plot.edge_hist(cn,'r')
 
     # save
     nx.write_gexf(cn,'corrnet.gexf')

@@ -41,10 +41,13 @@ class CorrNet(nx.Graph):
                         r, p = float(r), float(p)
                         self.add_edge(u,v, r=r, p=p, ir=1/(r**beta),ar=abs(r))
 
+            _edge_prop = ('r','p','ir','ar')
+
             if info_df is not None:
                 for n in self.node:
-                    for col in info_df.columns:
-                        n[col] = info_df.loc[n,col]
+                    if n in info_df.index:
+                        for col in info_df.columns:
+                            n[col] = info_df.loc[n,col]
         
         elif pickle_file is not None:
             # load from pickle file
@@ -56,6 +59,9 @@ class CorrNet(nx.Graph):
         if name is not None:
             self.graph['name'] = name
 
+    @property
+    def edge_properties(self):
+        return _edge_prop
 
     def save_pickle(self, filename):
         with open(filename, 'wb') as f:
@@ -66,61 +72,7 @@ class CorrNet(nx.Graph):
         return
 
 
-
-def getCorrelationSpanningGraph(self,partData,desc,weightFunc,centerNode,name=''):
-    cn = CorrNet(partData,self.desc, 'correlation',netName=name)
-        
-    # calculate weight function and find central node tree
-    cn.applyWeightAttr('centered_tree_weight',weightFunc,baseAttr='correlation')
-    G = cn.getCentralizedSpanningTree(centerNode,'centered_tree_weight')
-
-    G.graph['name'] = name # assign this for later use
-
-    return G
-
-
-
-def getCentralizedSpanningTree(self,nodeName,attrName, Gin = None):
-    '''Will create a spanning tree based on shortest paths to nodeName.'''
-
-    # calculate shortest path between varName and every other nodeName
-    shortestPaths = nx.shortest_path(self.G,nodeName,weight=attrName)
-    shortestPathsDist = nx.shortest_path_length(self.G,nodeName,weight=attrName)
-    del shortestPaths[nodeName]
-    del shortestPathsDist[nodeName]
-
-    # mark which, of all existing edges, are in these shortest paths
-    if Gin is None:
-        G = self.G.copy()
-    else:
-        G = Gin.copy()
-
-    edges = G.edges(data=False)
-    edgeInTree = {e:False for e in edges}
-    distFromCenter = {}
-    for n,path in shortestPaths.items():
-        distFromCenter[n] = len(path)
-        edgeList = [(path[i],path[i+1]) for i in range(len(path)-1)]
-        for e in edgeList:
-            if e in edges:
-                edgeInTree[e] = True
-            else:
-                edgeInTree[(e[1],e[0])] = True
-    
-    # apply node attribute indicating shortest path distance from central node
-    nx.set_node_attributes(G,'nodes_from_'+str(nodeName),distFromCenter)
-    nx.set_node_attributes(G,'dist_from_'+str(nodeName),shortestPathsDist)
-
-    # create new graph where edges not in tree will be removed
-    for e,inTree in edgeInTree.items():
-        if not inTree:
-            G.remove_edge(*e)
-
-    return G
-
-
-
-def from_quantile_analysis(self, diffVar, weightFunc, centerNode, numPartitions):
+def from_quantile_analysis(df, diffVar, weightFunc, centerNode, numPartitions):
     '''Splits diffVar into numPartitions quantiles for analysis.'''
     if not (self.desc.loc[diffVar,'type'] == 'rea' or self.desc.loc[diffVar,'type'] == 'ord'): # check if diffVar is a scalar value
         raise NameError(self.desc.loc[diffVar,'type'])
@@ -144,7 +96,7 @@ def from_quantile_analysis(self, diffVar, weightFunc, centerNode, numPartitions)
 
     return GList
 
-def getNominalAnalysisGraphs(self, diffVar, weightFunc, centerNode):
+def from_nominal_analysis(df, diffVar, weightFunc, centerNode):
     '''Splits data into partitions based on nominal variable value.'''
     if not self.desc.loc[diffVar,'type'] == 'nom': # check if diffVar is a scalar value
         raise NameError(diffVar)
@@ -170,9 +122,43 @@ def getNominalAnalysisGraphs(self, diffVar, weightFunc, centerNode):
     return GList
 
 
+def central_span_tree(CN, center_node, path_weight):
+    '''Will create a spanning tree based on shortest paths to center_node.
+    '''
+
+    CN = CN.copy()
+
+    # calculate shortest path between varName and every other nodeName
+    shortestPaths = nx.shortest_path(CN,nodeName,weight=attrName)
+    shortestPathsDist = nx.shortest_path_length(CN,nodeName,weight=attrName)
+    del shortestPaths[center_node]
+    del shortestPathsDist[center_node]
+
+    edges = CN.edges()
+    edgeInTree = {e:False for e in edges}
+    distFromCenter = {}
+    for n,path in shortestPaths.items():
+        distFromCenter[n] = len(path)
+        edgeList = [(path[i],path[i+1]) for i in range(len(path)-1)]
+        for e in edgeList:
+            if e in edges:
+                edgeInTree[e] = True
+            else:
+                edgeInTree[(e[1],e[0])] = True
+    
+    # apply node attribute indicating shortest path distance from central node
+    nx.set_node_attributes(CN,'nodes_from_'+str(nodeName),distFromCenter)
+    nx.set_node_attributes(CN,'dist_from_'+str(nodeName),shortestPathsDist)
+
+    # create new graph where edges not in tree will be removed
+    for e,inTree in edgeInTree.items():
+        if not inTree:
+            CN.remove_edge(*e)
+
+    return CN
 
 # hard threshold graph
-def getHardThresholdGraph(self,attrName,cutoffVal=None,cutoffNumber=None,keepLargest=True):
+def threshold_network(self,attrName,cutoffVal=None,cutoffNumber=None,keepLargest=True):
     '''Save edges greater than one standard deviation above the mean.'''
     # save graph that includes only the top n edges - for clarity in viewing programs
     edges = nx.get_edge_attributes(self.G,attrName)
